@@ -1,7 +1,7 @@
 import asyncio
 import json
+import logging
 import pickle
-import time
 import traceback
 from asyncio import AbstractEventLoop
 from functools import wraps
@@ -12,6 +12,8 @@ from aio_pika.abc import (AbstractChannel, AbstractConnection,
                           AbstractRobustChannel, AbstractRobustConnection)
 from aiormq import AMQPError, ChannelInvalidStateError
 
+from .settings import RabbitMQSettings
+
 
 class RabbitMQConnection:
     timeout_robust: int = 5
@@ -19,34 +21,31 @@ class RabbitMQConnection:
 
     def __init__(
             self,
-            host: str,
+            settings: RabbitMQSettings = None,
+            host: str = 'localhost',
             port: int = 5672,
-            user: str = None,
-            password: str = None,
-            logger: Any = None,
+            user: str = 'rabbitmq',
+            password: str = 'rabbitmq',
+            logger: logging.Logger = logging.getLogger(__name__),
             loop: AbstractEventLoop = asyncio.get_event_loop()
     ) -> None:
-        self.__at_started = True
-        self._start_time = time.time()
-        asyncio.set_event_loop(loop)
-        self.url = f'amqp://{user}:{password}@{host}:{port}/'
+        if settings is not None:
+            self.url = (f'amqp://{settings.username}:{settings.password}'
+                        f'@{settings.host}:{settings.port}/')
+        else:
+            self.url = f'amqp://{user}:{password}@{host}:{port}/'
         self.logger = logger
         self.loop = loop
         self.connection = None
         self.channel = None
         self._robust = None
+        asyncio.set_event_loop(loop)
 
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.aio_stop()
-
-    def _check_at_started(self) -> bool:
-        if self.__at_started:
-            if time.time() - self._start_time > self.timeout_robust:
-                self.__at_started = False
-        return self.__at_started
 
     @staticmethod
     def _check_is_open(connection_or_channel) -> bool:
