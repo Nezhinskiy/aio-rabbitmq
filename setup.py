@@ -8,7 +8,10 @@ from setuptools import find_packages, setup, Command
 # Package meta-data.
 
 NAME = 'aio-rabbitmq'
-DESCRIPTION = 'Logger with easy setup and sending errors to telegram'
+DESCRIPTION = (
+    'A concise library built on aio-pika for publishing and consuming from a '
+    'message queue in RabbitMQ'
+)
 MODULE_NAME = 'aio_rabbitmq'
 URL = 'https://github.com/Nezhinskiy/aio-rabbitmq'
 EMAIL = 'mikhail.nezhinsky@gmail.com'
@@ -101,9 +104,6 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
