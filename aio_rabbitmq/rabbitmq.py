@@ -129,11 +129,11 @@ class RabbitMQConnection:
                 channel: aio_pika.abc.AbstractChannel,
                 *args,
                 **kwargs
-        ):
+        ) -> None:
             for attempt in range(self.MAX_RETRIES):
                 try:
-                    return await func(self, queue_name, channel,
-                                      *args, **kwargs)
+                    await func(self, queue_name, channel, *args, **kwargs)
+                    break
                 except (
                         AMQPError, ChannelInvalidStateError
                 ) as exc:
@@ -162,6 +162,7 @@ class RabbitMQConnection:
                     )
         return wrapper
 
+    @retry_operation
     async def send_message(
             self,
             queue_name: str,
@@ -175,35 +176,10 @@ class RabbitMQConnection:
         else:
             packed_data = pickle.dumps(args)
         message = aio_pika.Message(body=packed_data, expiration=expiration)
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                await channel.default_exchange.publish(
-                    message,
-                    routing_key=queue_name
-                )
-                break
-            except (
-                    AMQPError, ChannelInvalidStateError
-            ) as exc:
-                await self.aio_stop()
-                channel = await self._get_channel()
-                trace = traceback.format_exc()
-                self.logger.error(
-                    f'{attempt=}: Error: {exc} Traceback: {trace}'
-                )
-                if attempt == self.MAX_RETRIES - 1:
-                    raise exc
-                await asyncio.sleep(self.timeout_robust)
-                self.logger.info('Unable to execute. Retrying...')
-            except ConnectionError as exc:
-                trace = traceback.format_exc()
-                self.logger.error(
-                    f'{attempt=}: Error: {exc} Traceback: {trace}'
-                )
-                if attempt == self.MAX_RETRIES - 1:
-                    raise exc
-                await asyncio.sleep(self.timeout_robust)
-                self.logger.info('Unable to execute. Retrying...')
+        await channel.default_exchange.publish(
+            message,
+            routing_key=queue_name
+        )
 
     async def callback_handler(
             self,
@@ -214,7 +190,13 @@ class RabbitMQConnection:
     ) -> None:
         try:
             await callback(*unpacked_data)
+        except asyncio.CancelledError:
+            raise
         except BaseException as exc:
+            if isinstance(exc, RuntimeError
+                          ) and 'different loop' in str(exc):
+                self.logger.error(f'Error: {exc}')
+                return
             try:
                 traceback_str = ''.join(traceback.format_tb(exc.__traceback__))
             except Exception:
@@ -222,7 +204,7 @@ class RabbitMQConnection:
             exception_message = (f'Error: {type(exc)}: {str(exc)}\n'
                                  f'{traceback_str}')
             await self.send_message(
-                queue_name, channel, exc, exception_message, expiration=5
+                queue_name, channel, exc, exception_message, expiration=3
             )
 
     async def consume_queue(
@@ -244,6 +226,8 @@ class RabbitMQConnection:
                             unpacked_data = [json.loads(message.body)]
                         else:
                             unpacked_data = pickle.loads(message.body)
+                    except asyncio.CancelledError:
+                        raise
                     except BaseException as exc:
                         self.logger.error(
                             f'Error: {exc}\n'
@@ -251,7 +235,7 @@ class RabbitMQConnection:
                         )
                         continue
                     if create_task:
-                        if len(unpacked_data) and isinstance(
+                        if unpacked_data and isinstance(
                                 unpacked_data[0], BaseException):
                             raise RuntimeError(unpacked_data[1])
                         else:
