@@ -3,7 +3,6 @@ import json
 import logging
 import pickle
 import traceback
-from asyncio import AbstractEventLoop
 from functools import wraps
 from typing import Any, Awaitable, Callable, Union
 
@@ -13,6 +12,7 @@ from aio_pika.abc import (AbstractChannel, AbstractConnection,
 from aiormq import AMQPError, ChannelInvalidStateError
 
 from .settings import RabbitMQSettings
+from .utils.event_loop import safe_get_loop
 
 
 class RabbitMQConnection:
@@ -26,8 +26,7 @@ class RabbitMQConnection:
             port: int = 5672,
             user: str = 'rabbitmq',
             password: str = 'rabbitmq',
-            logger: logging.Logger = logging.getLogger(__name__),
-            loop: AbstractEventLoop = asyncio.get_event_loop()
+            logger: logging.Logger = logging.getLogger(__name__)
     ) -> None:
         if settings is not None:
             self.url = (f'amqp://{settings.username}:{settings.password}'
@@ -35,11 +34,11 @@ class RabbitMQConnection:
         else:
             self.url = f'amqp://{user}:{password}@{host}:{port}/'
         self.logger = logger
-        self.loop = loop
+        self.loop = safe_get_loop()
         self.connection = None
         self.channel = None
         self._robust = None
-        asyncio.set_event_loop(loop)
+        asyncio.set_event_loop(self.loop)
 
     async def __aenter__(self):
         return self
